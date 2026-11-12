@@ -1,0 +1,74 @@
+name: Build Desktop-App
+
+# Baut die App für Windows, macOS und Linux.
+# - Bei einem Tag wie v1.0.0 wird zusätzlich ein GitHub-Release mit den Downloads erstellt.
+# - Manuell startbar im Reiter "Actions" -> "Build Desktop-App" -> "Run workflow".
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+          - os: macos-latest
+            name: macOS
+          - os: ubuntu-latest
+            name: Linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Schnelltest (Module importieren)
+        run: python -c "import rallycut, volleyball_stats, ui_html, imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"
+
+      - name: App bauen
+        run: pyinstaller --noconfirm --windowed --name VolleyballTool --collect-all imageio_ffmpeg app.py
+
+      - name: Paketieren (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dist/VolleyballTool -DestinationPath VolleyballTool-Windows.zip
+
+      - name: Paketieren (macOS)
+        if: runner.os == 'macOS'
+        run: ditto -c -k --keepParent dist/VolleyballTool.app VolleyballTool-macOS.zip
+
+      - name: Paketieren (Linux)
+        if: runner.os == 'Linux'
+        run: tar -czf VolleyballTool-Linux.tar.gz -C dist VolleyballTool
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VolleyballTool-${{ matrix.name }}
+          path: |
+            VolleyballTool-Windows.zip
+            VolleyballTool-macOS.zip
+            VolleyballTool-Linux.tar.gz
+          if-no-files-found: error
+
+      - name: Release erstellen und Downloads anhängen
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            VolleyballTool-Windows.zip
+            VolleyballTool-macOS.zip
+            VolleyballTool-Linux.tar.gz
